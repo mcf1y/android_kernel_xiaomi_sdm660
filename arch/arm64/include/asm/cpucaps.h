@@ -53,6 +53,7 @@
 #define ARM64_HAS_STAGE2_FWB			32
 #define ARM64_WORKAROUND_1463225		33
 #define ARM64_SSBS				34
+<<<<<<< HEAD
 #define ARM64_WORKAROUND_1188873		35
 #define ARM64_WORKAROUND_1542418		36
 #define ARM64_WORKAROUND_1542419		37
@@ -61,6 +62,8 @@
 
 /* kabi: reserve 40 - 62 for future cpu capabilities */
 #define ARM64_HAS_SB                            62
-#define ARM64_NCAPS				63
+#define ARM64_WORKAROUND_SPECULATIVE_SSBS       63
+
+#define ARM64_NCAPS				64
 
 #endif /* __ASM_CPUCAPS_H */
