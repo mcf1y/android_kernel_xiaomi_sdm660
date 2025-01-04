@@ -40,6 +40,7 @@
 #include "debug.h"
 
 #define DWC3_DEFAULT_AUTOSUSPEND_DELAY	500 /* ms */
+#define DWC3_GUCTL_HSTINAUTORETRY	BIT(14)
 
 static int count;
 static struct dwc3 *dwc3_instance[DWC_CTRL_COUNT];
@@ -862,6 +863,7 @@ static void dwc3_set_incr_burst_type(struct dwc3 *dwc)
 	ret = device_property_read_u32_array(dev,
 			"snps,incr-burst-type-adjustment", vals, ntype);
 	if (ret) {
+		kfree(vals);
 		dev_err(dev, "Error to get property\n");
 		return;
 	}
@@ -879,6 +881,8 @@ static void dwc3_set_incr_burst_type(struct dwc3 *dwc)
 		/* INCRX burst mode */
 		incrx_mode = INCRX_BURST_MODE;
 	}
+
+	kfree(vals);
 
 	/* Enable Undefined Length INCR Burst and Enable INCRx Burst */
 	cfg &= ~DWC3_GSBUSCFG0_INCRBRST_MASK;
@@ -1040,6 +1044,21 @@ int dwc3_core_init(struct dwc3 *dwc)
 		}
 
 		dwc3_writel(dwc->regs, DWC3_GUCTL1, reg);
+	}
+
+	if (dwc->dr_mode == USB_DR_MODE_HOST || dwc3_is_otg_or_drd(dwc)) {
+		reg = dwc3_readl(dwc->regs, DWC3_GUCTL);
+
+		/*
+		 * Enable Auto retry Feature to make the controller operating in
+		 * Host mode on seeing transaction errors(CRC errors or internal
+		 * overrun scenerios) on IN transfers to reply to the device
+		 * with a non-terminating retry ACK (i.e, an ACK transcation
+		 * packet with Retry=1 & Nump != 0)
+		 */
+		reg |= DWC3_GUCTL_HSTINAUTORETRY;
+
+		dwc3_writel(dwc->regs, DWC3_GUCTL, reg);
 	}
 
 	/*
@@ -1453,13 +1472,13 @@ static int dwc3_probe(struct platform_device *pdev)
 {
 	struct device		*dev = &pdev->dev;
 	struct resource		*res, dwc_res;
-	struct dwc3		*dwc;
-
-	int			ret;
-
+	struct dwc3			*dwc;
+	int					ret;
 	void __iomem		*regs;
-	int			irq;
-	char			dma_ipc_log_ctx_name[40];
+	int					irq;
+#ifdef CONFIG_IPC_LOGGING
+	char				dma_ipc_log_ctx_name[40];
+#endif
 
 	if (count >= DWC_CTRL_COUNT) {
 		dev_err(dev, "Err dwc instance %d >= %d available\n",
@@ -1594,6 +1613,7 @@ skip_clk_reset:
 		}
 	}
 
+#ifdef CONFIG_IPC_LOGGING
 	dwc->dwc_ipc_log_ctxt = ipc_log_context_create(NUM_LOG_PAGES,
 					dev_name(dwc->dev), 0);
 	if (!dwc->dwc_ipc_log_ctxt)
@@ -1605,6 +1625,7 @@ skip_clk_reset:
 						dma_ipc_log_ctx_name, 0);
 	if (!dwc->dwc_dma_ipc_log_ctxt)
 		dev_err(dwc->dev, "Error getting ipc_log_ctxt for ep_events\n");
+#endif
 
 	dwc3_instance[count] = dwc;
 	dwc->index = count;
@@ -1612,6 +1633,7 @@ skip_clk_reset:
 
 	pm_runtime_allow(dev);
 	dwc3_debugfs_init(dwc);
+
 	return 0;
 
 err3:
@@ -1994,6 +2016,7 @@ static struct platform_driver dwc3_driver = {
 		.of_match_table	= of_match_ptr(of_dwc3_match),
 		.acpi_match_table = ACPI_PTR(dwc3_acpi_match),
 		.pm	= &dwc3_dev_pm_ops,
+		.probe_type = PROBE_FORCE_SYNCHRONOUS,
 	},
 };
 
